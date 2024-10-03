@@ -22,10 +22,13 @@ class SimilarityPredictionResponse(BaseModel):
 async def predict_deepfake(file: UploadFile = File(...)):
     
     model_weight_path = "deepfake_detection/model/ethkl_cnn_lstm_vid_30_epochs_20.pt"
+    
     # Load the model
     model = CNNLSTM()
-    model.load_state_dict(torch.load(model_weight_path))
-    model.eval() 
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.load_state_dict(torch.load(model_weight_path, map_location=device))
+    model.to(device)
+    model.eval()
 
     video_path = f"temp_{file.filename}"
     
@@ -39,17 +42,13 @@ async def predict_deepfake(file: UploadFile = File(...)):
     # Add batch dimension
     video_tensor = video_tensor.unsqueeze(0)  # Shape: [1, num_frames, 3, 224, 224]
 
-    # Move to device if using GPU
-    if torch.cuda.is_available():
-        video_tensor = video_tensor.to("cuda")
-        model.to("cuda")
+    # Move to device
+    video_tensor = video_tensor.to(device)
 
     # Make prediction
     with torch.no_grad():
         outputs = model(video_tensor)
-        print(outputs)
         _, predicted = torch.max(outputs.data, 1)
-        print(predicted)
     
     # Map prediction to label
     prediction_label = "FAKE" if predicted.item() == 1 else "REAL"
