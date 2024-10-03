@@ -2,6 +2,7 @@ torch
 torchvision
 opencv-python
 numpy
+scikit-image
 Pillow
 matplotlib
 seaborn

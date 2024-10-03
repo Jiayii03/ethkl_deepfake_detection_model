@@ -1,63 +1,32 @@
-from fastapi import FastAPI, File, UploadFile
-import cv2
-import torch
-import numpy as np
+from fastapi import FastAPI, File, UploadFile, HTTPException
 from pydantic import BaseModel
 from typing import List
 from pathlib import Path
-from model_builder import CNNLSTM
+import cv2
+import torch
+import numpy as np
+from deepfake_detection.model_builder import CNNLSTM
+from deepfake_detection.util import deepfake_preprocess
+from similarity_detection.util import process_videos
 
 app = FastAPI()
 
-model_weight_path = "model/ethkl_cnn_lstm_vid_30_epochs_20.pt"
-
-# Load the model
-model = CNNLSTM()
-model.load_state_dict(torch.load(model_weight_path))
-model.eval() 
-
-def deepfake_preprocess(video_path: str, num_frames: int = 30) -> torch.Tensor:
-    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-    cap = cv2.VideoCapture(video_path)
-
-    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-    frame_indices = np.linspace(0, total_frames - 1, num_frames, dtype=int)
-    frames = []
-
-    for frame_idx in frame_indices:
-        cap.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)  # Set the frame position
-        ret, frame = cap.read()
-        if ret:
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5)
-
-            if len(faces) > 0:
-                (x, y, w, h) = faces[0]  # Get the first detected face
-                frame = frame[y:y+h, x:x+w]  # Crop the face
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                frame = cv2.resize(frame, (224, 224))  # Resize frame to model input size
-                frames.append(frame.astype(np.float32))  # Convert to float32
+class DeepfakePredictionResponse(BaseModel):
+    prediction: str
     
-    cap.release()
-
-    # If fewer valid frames were read, duplicate the last frame until the required number is reached
-    while len(frames) < num_frames:
-        frames.append(frames[-1])  # Duplicate the last valid frame
-
-    # Convert to tensor and normalize
-    video_tensor = torch.stack([torch.tensor(f) for f in frames]).permute(0, 3, 1, 2)  # Shape: [num_frames, 3, 224, 224]
-    
-    # Normalize the tensor (if needed)
-    video_tensor /= 255.0  # Scale pixel values to [0, 1]
-
-    return video_tensor
-
-# Define a Pydantic model for the response
-class PredictionResponse(BaseModel):
+class SimilarityPredictionResponse(BaseModel):
+    average_histogram_sim: float
     prediction: str
 
-@app.post("/predict-deepfake", response_model=PredictionResponse)
-async def predict_video(file: UploadFile = File(...)):
+@app.post("/predict-deepfake", response_model=DeepfakePredictionResponse)
+async def predict_deepfake(file: UploadFile = File(...)):
+    
+    model_weight_path = "deepfake_detection/model/ethkl_cnn_lstm_vid_30_epochs_20.pt"
+    # Load the model
+    model = CNNLSTM()
+    model.load_state_dict(torch.load(model_weight_path))
+    model.eval() 
+
     video_path = f"temp_{file.filename}"
     
     # Save the uploaded video to a temporary location
@@ -88,10 +57,40 @@ async def predict_video(file: UploadFile = File(...)):
     # Optionally, clean up the temporary video file
     Path(video_path).unlink(missing_ok=True)
 
-    return PredictionResponse(prediction=prediction_label)
+    return DeepfakePredictionResponse(prediction=prediction_label)
 
-'''
-To run uvicorn app,
-cd ethkl_deepfake_repo
-uvicorn main_predict:app --reload
-'''
+@app.post("/predict-similarity", response_model=SimilarityPredictionResponse)
+async def predict_similarity(files: List[UploadFile]):
+    
+    # if only one video is uploaded, return error
+    if len(files) != 2:
+        # return error status code with message
+        raise HTTPException(status_code=400, detail="Please upload two videos for comparison.")
+    
+    video_path1 = f"temp_{files[0].filename}"
+    video_path2 = f"temp_{files[1].filename}"
+    
+    # Save the uploaded videos to temporary locations
+    with open(video_path1, "wb") as f:
+        f.write(await files[0].read())
+    with open(video_path2, "wb") as f:
+        f.write(await files[1].read())
+
+    # Process the videos and compute similarity scores
+    average_histogram_sim = process_videos(video_path1, video_path2)
+    prediction = None
+    
+    # Make prediction based on similarity scores
+    if average_histogram_sim > 0.9:
+        prediction = "SIMILAR"
+    else:
+        prediction = "DIFFERENT"
+
+    # Optionally, clean up the temporary video files
+    Path(video_path1).unlink(missing_ok=True)
+    Path(video_path2).unlink(missing_ok=True)
+
+    return SimilarityPredictionResponse(
+        average_histogram_sim=average_histogram_sim,
+        prediction=prediction
+    )
