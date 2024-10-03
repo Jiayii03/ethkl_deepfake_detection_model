@@ -55,7 +55,7 @@ curl -X POST "http://127.0.0.1:8000/predict" -F "file=@/path/to/your/video.mp4"
 ```
 Replace `/path/to/your/video.mp4` with the actual path to your video file.
 
-#### 1.3. API Response
+#### 1.3. API Response example
 
 The response will be a JSON object indicating whether the video is "REAL" or "FAKE":
 
@@ -67,4 +67,15 @@ The response will be a JSON object indicating whether the video is "REAL" or "FA
 
 ### 2. Similar Video detection 
 
-#### 1. 
+#### 1. Using the `/predict-similarity` Endpoint
+
+This endpoint must accept two videos. 
+
+#### 2. API response example
+
+```json
+{
+  "average_histogram_sim": 0.9999,
+  "prediction": "SIMILAR"
+}
+```
