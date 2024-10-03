@@ -34,7 +34,7 @@ pip install -r requirements.txt
 
 ### 4. Download Model from Drive
 
-Download the trained model from [My Google Drive](https://drive.google.com/file/d/1sPITbnQDRM0Wg1dxidpJOTybQi8-4a1S/view?usp=sharing) and put it under the `/model` directory, create one if not exist. Do not change the file name.
+Download the trained model from [My Google Drive](https://drive.google.com/drive/folders/1RTJGPMsKU11JMZdMsiaDdkXqdtA0befJ?usp=sharing) and put it under the `/model` directory, create one if not exist. Do not change the file name.
 
 ### 5. Run the FastAPI Application
 ```bash
